@@ -1,29 +1,18 @@
 const readline = require('readline');
 const fs = require('fs');
+const {config} = require('./config.js');
 
-const filePath = "/Users/mikelockett/Desktop/log-sample.txt";
-const outputFilePath = "/Users/mikelockett/Desktop/log-sample-output.txt";
 const unitStartRegex = /CODE_UNIT_STARTED/g;
 const unitFinishRegex = /CODE_UNIT_FINISHED/g;
+const methodEntryRegex = /METHOD_ENTRY/g;
+const methodExitRegex = /METHOD_EXIT/g;
 
-// to ignore all line before locating specific text, set start
-const startProcessing = /Test.startTest/g;
 let startFound = false;
-
-const includedTextList = ["resultCcls"];
-
-
 let indentLevel = 0;
 let outputText = "";
 
-const readInterface = readline.createInterface({
-   input: fs.createReadStream(filePath),
-   //output: process.stdout,
-   console: false
-});
-
 async function processLineByLine() {
-   const fileStream = fs.createReadStream(filePath);
+   const fileStream = fs.createReadStream(config.logFilePath);
 
    const rl = readline.createInterface({
       input: fileStream,
@@ -37,22 +26,27 @@ async function processLineByLine() {
          // Each line in input.txt will be successively available here as `line`.
          //console.log(`Line from file: ${line}`);
          if (line.search(unitStartRegex) > -1) {
-            outputText += `${addTabs(indentLevel)}> ${formatLine(line)}\n`;
+            outputText += `${addTabs(indentLevel)}>> ${formatLine(line)}\n`;
             indentLevel++;
          } else if (line.search(unitFinishRegex) > -1) {
             indentLevel && indentLevel--;
+            outputText += `${addTabs(indentLevel)}<< ${formatLine(line)}\n`;
+         } else if (config.showMethods && line.search(methodEntryRegex) > -1) {
+            outputText += `${addTabs(indentLevel)}> ${formatLine(line)}\n`;
+            indentLevel++;
+         } else if (config.showMethods && line.search(methodExitRegex) > -1) {
+            indentLevel && indentLevel--;
             outputText += `${addTabs(indentLevel)}< ${formatLine(line)}\n`;
-         } else if(includedTextList.length > 0){
-            for(let i=0; i<includedTextList.length; i++){
-               if(line.search(includedTextList[i])>-1){
-                  outputText += `${addTabs(indentLevel+1)}** ${formatLine(line)}\n`;
+         } else if (config.includedTextList.length > 0) {
+            for (let i = 0; i < config.includedTextList.length; i++) {
+               if (line.search(config.includedTextList[i]) > -1) {
+                  outputText += `${addTabs(indentLevel + 1)}${config.prefixForIncluded} ${formatLine(line)}\n`;
                }
             }
 
          }
-      }
-      else if(line.search(startProcessing) > -1){
-         startFound=true;
+      } else if (line.search(config.startProcessing) > -1) {
+         startFound = true;
       }
    }
 }
@@ -61,13 +55,11 @@ function formatLine(line) {
    let retVal;
    let sections = line.split('|');
 
-   if(sections[2]==="DEBUG"){
+   if (sections[2] === "DEBUG") {
       retVal = sections[3];
-   }
-   else if(sections[sections.length - 1].startsWith("__sfdc_trigger")){
+   } else if (sections[sections.length - 1].startsWith("__sfdc_trigger")) {
       retVal = sections[sections.length - 2];
-   }
-   else {
+   } else {
       retVal = sections[sections.length - 1];
    }
 
@@ -83,11 +75,13 @@ function addTabs(num) {
 }
 
 async function main() {
-   await processLineByLine();
-   if(outputFilePath){
-      fs.writeFileSync(outputFilePath, outputText)
+   if (!config.startProcessing) {
+      startFound = true;
    }
-   else{
+   await processLineByLine();
+   if (config.outputFilePath) {
+      fs.writeFileSync(config.outputFilePath, outputText)
+   } else {
       console.log(outputText);
    }
 }
